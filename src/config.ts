@@ -41,6 +41,10 @@ function getConfigValue(name: string, fallback?: string): string | undefined {
 // Per-project Data Export API token. Still supported for existing users; new users sign in with the login tool.
 export const CLARITY_API_TOKEN = getConfigValue('clarity_api_token');
 
+// Directory for the OAuth sign-in on hosts without an OS credential store (containers, servers).
+// When set, the sign-in is kept in files there instead of the OS credential store.
+export const CLARITY_CREDENTIALS_DIR = getConfigValue('clarity_credentials_dir');
+
 // Base URLs of the Clarity service and its MCP API.
 export const CLARITY_BASE_URL = "https://clarity.microsoft.com";
 export const CLARITY_MCP_API_BASE_URL = `${CLARITY_BASE_URL}/mcp`;

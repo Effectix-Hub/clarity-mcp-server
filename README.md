@@ -138,6 +138,20 @@ To configure Claude for Desktop to use this server:
 2. Add the token-free configuration shown in the generic example above
 3. Save the configuration file and restart Claude for Desktop
 
+### Running on a Server or in a Container
+
+Hosts without an OS credential store (Docker containers, Linux servers without a secret service) keep the sign-in only in memory, so it is lost whenever the server stops. Set a credentials directory to keep it in files instead:
+
+```bash
+CLARITY_CREDENTIALS_DIR=/var/lib/clarity-mcp clarity-mcp-server
+# or
+clarity-mcp-server --clarity_credentials_dir=/var/lib/clarity-mcp
+```
+
+The server stores `session.json` (the refresh token) and `access-token.json` there with mode `0600` and rewrites them when tokens are refreshed, so the directory must be writable. Treat the directory as a secret.
+
+Sign-in completes on a loopback address (`http://127.0.0.1:<port>/callback`), so a browser has to reach the machine running the server. On a remote host, sign in once on a workstation with the same `CLARITY_CREDENTIALS_DIR` setting, then move `session.json` to the host and stop using the workstation copy: refresh tokens rotate, so only one copy stays valid.
+
 ## Server Usage
 
 The server exposes various tools that you can call from any MCP client.

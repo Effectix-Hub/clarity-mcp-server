@@ -1,5 +1,9 @@
 import type { AsyncEntry } from "@napi-rs/keyring";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
+import { CLARITY_CREDENTIALS_DIR } from "../config.js";
 import type { StoredAccessToken, StoredSession } from "./models.js";
 
 const KEYRING_SERVICE = "microsoft-clarity-mcp";
@@ -142,6 +146,87 @@ export class KeyringCredentialStore implements ICredentialStore {
 }
 
 /**
+ * Persists JSON-serialized credentials as two files in one directory.
+ *
+ * For hosts without an OS credential store, such as containers and servers. Files are
+ * written with mode 0600 and replaced atomically, so a reader never sees a partial file.
+ * Read and write failures other than a missing file propagate to the caller. Invalid
+ * stored JSON or record shapes are treated as missing credentials.
+ */
+export class FileCredentialStore implements ICredentialStore {
+  /** Credentials are persisted in files. */
+  readonly persistent = true;
+  private readonly sessionPath: string;
+  private readonly accessTokenPath: string;
+
+  /**
+   * @param directory - The directory that holds the sign-in and access-token files.
+   */
+  constructor(directory: string) {
+    this.sessionPath = join(directory, "session.json");
+    this.accessTokenPath = join(directory, "access-token.json");
+  }
+
+  /** {@inheritDoc ICredentialStore.load} */
+  async load(): Promise<StoredSession | null> {
+    const value = await readIfExists(this.sessionPath);
+    return value ? parseSession(value) : null;
+  }
+
+  /** {@inheritDoc ICredentialStore.save} */
+  async save(session: StoredSession): Promise<void> {
+    await writeAtomically(this.sessionPath, JSON.stringify(session));
+  }
+
+  /** {@inheritDoc ICredentialStore.loadAccessToken} */
+  async loadAccessToken(): Promise<StoredAccessToken | null> {
+    const value = await readIfExists(this.accessTokenPath);
+    return value ? parseAccessToken(value) : null;
+  }
+
+  /** {@inheritDoc ICredentialStore.saveAccessToken} */
+  async saveAccessToken(token: StoredAccessToken): Promise<void> {
+    await writeAtomically(this.accessTokenPath, JSON.stringify(token));
+  }
+
+  /** Deletes the access-token file before the sign-in file; missing files are not an error. */
+  async clear(): Promise<void> {
+    await rm(this.accessTokenPath, { force: true });
+    await rm(this.sessionPath, { force: true });
+  }
+}
+
+/**
+ * Reads a UTF-8 file.
+ *
+ * @returns The file content, or `null` when the file does not exist.
+ */
+async function readIfExists(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Writes a file readable only by its owner, replacing any existing file in one rename.
+ */
+async function writeAtomically(path: string, data: string): Promise<void> {
+  const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  await writeFile(temporaryPath, data, { mode: 0o600 });
+  try {
+    await rename(temporaryPath, path);
+  } catch (error) {
+    await rm(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
+/**
  * Parses a stored access token and validates its required fields.
  *
  * @param value - The JSON read from the access-token entry.
@@ -201,7 +286,12 @@ function parseSession(value: string): StoredSession | null {
 }
 
 /**
- * Creates an OS-backed credential store, falling back to process-local memory.
+ * Creates the credential store for the sign-in.
+ *
+ * When a credentials directory is configured (`--clarity_credentials_dir` or
+ * `CLARITY_CREDENTIALS_DIR`), returns a file-backed store in that directory and creates
+ * the directory if needed. Otherwise creates an OS-backed store, falling back to
+ * process-local memory.
  *
  * Loads the native keyring module on demand and probes the sign-in entry to check
  * availability. If initialization or the probe fails, logs the failure and
@@ -210,10 +300,16 @@ function parseSession(value: string): StoredSession | null {
  *
  * @param origin - The Clarity service origin used to namespace both credential
  * entries and keep credentials for different service origins separate.
- * @returns An OS-backed store when initialization succeeds, otherwise a
- * non-persistent in-memory store.
+ * @param credentialsDirectory - The configured credentials directory, if any.
+ * @returns A file-backed store when a directory is configured, an OS-backed store when
+ * initialization succeeds, otherwise a non-persistent in-memory store.
  */
-export async function createCredentialStore(origin: string): Promise<ICredentialStore> {
+export async function createCredentialStore(origin: string, credentialsDirectory = CLARITY_CREDENTIALS_DIR): Promise<ICredentialStore> {
+  if (credentialsDirectory) {
+    await mkdir(credentialsDirectory, { recursive: true, mode: 0o700 });
+    return new FileCredentialStore(credentialsDirectory);
+  }
+
   try {
     // Loaded on demand: the native binary may be missing for this platform (e.g. a bundle built on another OS), which
     // must not stop the server, so existing Data Export token users are unaffected.
