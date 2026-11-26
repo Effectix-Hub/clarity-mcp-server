@@ -1,0 +1,37 @@
+{
+  "name": "@microsoft/clarity-mcp-server",
+  "version": "3.0.0",
+  "description": "The official MCP server for Microsoft Clarity (Effectix-Hub fork, file credential store; built from main 1215f7a)",
+  "author": "Microsoft",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "homepage": "https://clarity.microsoft.com/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/microsoft/clarity-mcp-server"
+  },
+  "keywords": [
+    "clarity",
+    "clarity-ai",
+    "behavior-analytics-tools",
+    "heatmaps",
+    "session-recordings",
+    "insights",
+    "analytics",
+    "ai-visibility"
+  ],
+  "bin": {
+    "clarity-mcp-server": "./dist/cli.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.2",
+    "@napi-rs/keyring": "^2.1.0",
+    "zod": "^3.25.76"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}
